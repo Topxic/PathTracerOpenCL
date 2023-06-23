@@ -1,0 +1,232 @@
+#include "data/shader/pathtracer/common.glsl"
+#include "data/shader/pathtracer/sample.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+struct RayHit {
+    float d; // distance to nearest object
+    vec3 p; // world position of hit
+    vec3 outDir; // Outgoing ray direction
+    vec3 n; // Hit normal
+    int matIdx; // Material index
+};
+
+struct Material {
+    vec3 color;
+    float roughness;
+    float metallic;
+    float ior; // index of refraction
+    vec3 emission;
+};
+
+#define BACKGORUND_COLOR vec3(0.2, 0.2, 0.7)
+
+#define INVALID_RAYHIT RayHit(maximalRayMarchingDistance, vec3(0), vec3(0), vec3(0), -1)
+
+#define LIGHT_MATERIAL Material(vec3(1), 0, 0, 0, vec3(30, 10, 0))
+#define PLANE_MATERIAL Material(vec3(1), 1, 0, 0, vec3(0))
+#define DIFFUSE_MATERIAL Material(vec3(1, 0, 0), 1, 0, 0, vec3(0))
+#define GLOSSY_MATERIAL Material(vec3(0, 1, 0), 0, 0, 0, vec3(0))
+#define GLASS_MATERIAL Material(vec3(1), 0, 0, 1.5, vec3(0))
+
+const Material materials[5] = Material[](LIGHT_MATERIAL, PLANE_MATERIAL, DIFFUSE_MATERIAL, GLOSSY_MATERIAL, GLASS_MATERIAL);
+
+float fresnelSchlick(float cosTheta, float ior) {
+    float r0 = (1 - ior) / (1 + ior);
+    r0 = r0 * r0;
+    return r0 + (1 - r0) * pow(1 - cosTheta, 5);
+}
+
+float sphereSDF(vec3 p, float radius) {
+    return length(p) - radius;
+}
+
+float cubeSDF(vec3 p, vec3 size) {
+    vec3 d = abs(p) - size;
+    return length(max(d, 0.0)) + min(max(d.x, max(d.y, d.z)), 0.0);
+}
+
+float planeSDF(vec3 p, vec3 n) {
+    return abs(dot(p, n));
+}
+
+RayHit map(vec3 p) {
+    RayHit hit = INVALID_RAYHIT;
+    float dist = maximalRayMarchingDistance;
+
+    vec3 n = normalize(vec3(0, 1, 0));
+    dist = sphereSDF(p - vec3(0, 3, 0), 0.5);
+    if (dist < hit.d) 
+    {
+        hit.d = dist;
+        hit.matIdx = 0;
+    }
+    dist = planeSDF(p, vec3(0, 1, 0));
+    if (dist < hit.d) 
+    {
+        hit.d = dist;
+        hit.matIdx = 1;
+    }
+    dist = cubeSDF(p - vec3(0, 1.5, 0), vec3(2, 0.5, 2));
+    if (dist < hit.d) 
+    {
+        hit.d = dist;
+        hit.matIdx = 4;
+    }
+
+    return hit;    
+}
+
+vec3 getNormal(vec3 p) {
+    const vec2 eps = vec2(epsilon, 0.0);
+    return normalize(vec3(
+      map(p + eps.xyy).d - map(p - eps.xyy).d,
+      map(p + eps.yxy).d - map(p - eps.yxy).d,
+      map(p + eps.yyx).d - map(p - eps.yyx).d
+    ));
+}
+
+RayHit rayMarching(vec3 rayOrigin, vec3 rayDirection) {
+    float travelledDistance = 0;
+    for (int i = 0; i < maximalRayMarchingSteps; i++) {
+        vec3 currentPos = rayOrigin + rayDirection * travelledDistance;
+        RayHit hit = map(currentPos);
+
+        if (abs(hit.d) < epsilon) {
+            hit.p = currentPos;
+            hit.n = getNormal(currentPos);
+            return hit;
+        }
+        travelledDistance += abs(hit.d);
+
+        if (travelledDistance > maximalRayMarchingDistance) {
+          // No intersection within the maximum distance
+          break;
+        }
+    }
+    // No intersection, return invalid hit
+    return INVALID_RAYHIT;
+}
+
+vec3 calculateColor(vec3 rayOrigin, vec3 rayDirection)
+{
+    RayHit hits[15];
+    int numHits = 0;
+    bool insideObject = false;
+
+    RayHit hit = rayMarching(rayOrigin, rayDirection);
+    while (numHits < numberOfBounces && hit.d < epsilon) {
+
+        Material m = materials[hit.matIdx];
+        float ior = m.ior;
+        
+        // Check if ray is inside object
+        if (hit.d < 0) {
+            hit.n *= -1;
+        }
+        float cosTheta = dot(-rayDirection, hit.n);
+        float f = fresnelSchlick(acos(cosTheta), 1 / ior);
+        float rnd = randFloat(hit.d, numHits * 5);
+
+        vec3 dir = hit.n;    
+        vec3 offsetDir = hit.n;    
+        if (hit.d < 0 || (ior > epsilon && rnd > f)) {
+            dir = normalize(refract(rayDirection, hit.n, 1 / ior));
+            offsetDir *= -1;
+        }
+        rayOrigin = hit.p + 2 * epsilon * offsetDir;
+        rayDirection = sampleHemisphere(dir, numHits, hit.d, m.roughness);
+        hit.outDir = rayDirection;
+
+        hits[numHits] = hit;
+        numHits += 1;
+        hit = rayMarching(rayOrigin, rayDirection);
+    }
+    
+
+    // Sky was hit immedialty
+    if (numHits == 0) {
+        return BACKGORUND_COLOR;
+    }
+
+    // Reverse iterate through hit list and accumulate colors
+    vec3 color = vec3(0.2);
+    for (int j = numHits - 1; j >= 0; --j) {
+        RayHit hit = hits[j];
+        Material m = materials[hit.matIdx];
+        float cosTheta = dot(hit.n, hit.outDir);
+        if (m.ior > epsilon && cosTheta < 0) {
+            cosTheta *= -1;
+        }
+        cosTheta = max(cosTheta, 0);
+        if (hit.matIdx == 1) { // plane
+            bool even = (int(floor(hit.p.x)) + int(floor(hit.p.z))) % 2 == 0;
+            if (even) {
+                m.color *= 0.2;
+            }
+        }
+        color = m.emission + cosTheta * m.color * color;
+    }
+    return color;
+}
+
+void main()
+{
+    if (!update && !calculate)
+    {
+        return;
+    }
+
+    ivec2 id = ivec2(gl_GlobalInvocationID.xy);
+    if (id.x >= int(imageResolution.x) || id.y >= int(imageResolution.y)) {
+        return;
+    }    
+
+    vec2 tc = vec2(id) / imageResolution;
+    vec2 ndc = tc * 2 - 1;
+    ndc.x *= imageResolution.x / imageResolution.y;
+    vec3 worldUp = vec3(0, -1, 0);
+    vec3 cameraRight = normalize(cross(worldUp, cameraDirection));
+    vec3 cameraUp = normalize(cross(cameraDirection, cameraRight));
+
+    vec3 rayOrigin = cameraPosition;
+    vec3 rayDirection = cameraDirection;
+
+    if (calculate) { // Activate focal depth effect
+        // Calculate focal point
+        vec3 focalPoint;
+        RayHit hit = rayMarching(cameraPosition, cameraDirection);
+        if (hit.d < epsilon) {
+            focalPoint = hit.p;
+        } else {
+            focalPoint = cameraPosition + cameraDirection * focalLength;
+        }
+        
+        // Shift camera position around a disk
+        vec2 rnd = sampleDisk();
+        rnd *= aperture / imageResolution;
+        rayOrigin = cameraPosition + rnd.x * cameraRight + rnd.y * cameraUp;
+        rayDirection = normalize(focalPoint - rayOrigin);
+    } 
+
+    if (calculate) // Activate anti aliasing
+    {
+        int idx = currentFrame % 9;
+        vec2 antiAliasingIdx = vec2(idx % 3, idx / 3);
+        vec2 rand = sampleStratified(antiAliasingIdx, 3) * 2 - 1;
+        ndc += rand / imageResolution;
+    }
+
+    rayDirection = normalize(rayDirection + ndc.x * cameraRight + ndc.y * cameraUp);
+
+
+    // Calculate color and average with previous frames
+    vec3 color = calculateColor(rayOrigin, rayDirection);
+    if (calculate) {
+        vec3 prevColor = image[id.x * int(imageResolution.y) + id.y].xyz;
+        color += currentFrame * prevColor;
+        color /= currentFrame + 1;
+    }
+
+    image[id.x * int(imageResolution.y) + id.y] = vec4(color, 1);
+}
