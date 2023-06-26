@@ -14,7 +14,6 @@ struct RayHit {
 struct Material {
     vec3 color;
     float roughness;
-    float metallic;
     float ior; // index of refraction
     vec3 emission;
 };
@@ -23,13 +22,25 @@ struct Material {
 
 #define INVALID_RAYHIT RayHit(maximalRayMarchingDistance, vec3(0), vec3(0), vec3(0), -1)
 
-#define LIGHT_MATERIAL Material(vec3(1), 0, 0, 0, vec3(30, 10, 0))
-#define PLANE_MATERIAL Material(vec3(1), 1, 0, 0, vec3(0))
-#define DIFFUSE_MATERIAL Material(vec3(1, 0, 0), 1, 0, 0, vec3(0))
-#define GLOSSY_MATERIAL Material(vec3(0, 1, 0), 0, 0, 0, vec3(0))
-#define GLASS_MATERIAL Material(vec3(1), 0, 0, 1.5, vec3(0))
+#define RED_LIGHT_MATERIAL Material(vec3(1), 1, 0, vec3(15, 0, 0))
+#define GREEN_LIGHT_MATERIAL Material(vec3(1), 1, 0, vec3(0, 15, 0))
+#define BLUE_LIGHT_MATERIAL Material(vec3(1), 1, 0, vec3(0, 0, 30))
+#define WHITE_LIGHT_MATERIAL Material(vec3(1), 0, 0, vec3(5))
 
-const Material materials[5] = Material[](LIGHT_MATERIAL, PLANE_MATERIAL, DIFFUSE_MATERIAL, GLOSSY_MATERIAL, GLASS_MATERIAL);
+#define PLANE_MATERIAL Material(vec3(1), 1, 0, vec3(0))
+#define DIFFUSE_MATERIAL Material(vec3(1), 0.5, 0, vec3(0))
+#define GLOSSY_MATERIAL Material(vec3(1, 1, 0), 0, 0, vec3(0))
+#define GLASS_MATERIAL Material(vec3(1), 0, 1.5, vec3(0))
+
+const Material materials[8] = Material[] (
+    RED_LIGHT_MATERIAL,
+    GREEN_LIGHT_MATERIAL,
+    BLUE_LIGHT_MATERIAL, 
+    PLANE_MATERIAL, 
+    DIFFUSE_MATERIAL, 
+    GLOSSY_MATERIAL, 
+    GLASS_MATERIAL,
+    WHITE_LIGHT_MATERIAL);
 
 float fresnelSchlick(float cosTheta, float ior) {
     float r0 = (1 - ior) / (1 + ior);
@@ -54,24 +65,65 @@ RayHit map(vec3 p) {
     RayHit hit = INVALID_RAYHIT;
     float dist = maximalRayMarchingDistance;
 
-    vec3 n = normalize(vec3(0, 1, 0));
-    dist = sphereSDF(p - vec3(0, 3, 0), 0.5);
-    if (dist < hit.d) 
-    {
-        hit.d = dist;
-        hit.matIdx = 0;
-    }
+    // Ground checkboard plane
     dist = planeSDF(p, vec3(0, 1, 0));
     if (dist < hit.d) 
     {
         hit.d = dist;
-        hit.matIdx = 1;
+        hit.matIdx = 3;
     }
-    dist = cubeSDF(p - vec3(0, 1.5, 0), vec3(2, 0.5, 2));
+
+    dist = cubeSDF(p - vec3(0, 3, 3), vec3(1, 0.01, 1));
+    if (dist < hit.d) 
+    {
+        hit.d = dist;
+        hit.matIdx = 2;
+    }
+
+    // Central white light plane
+    dist = cubeSDF(p - vec3(0, 4, 0), vec3(1, 0.01, 1));
+    if (dist < hit.d) 
+    {
+        hit.d = dist;
+        hit.matIdx = 7;
+    }
+
+    // Half diffuse platform
+    dist = cubeSDF(p - vec3(0, 0.2, 0), vec3(3, 0.1, 3));
     if (dist < hit.d) 
     {
         hit.d = dist;
         hit.matIdx = 4;
+    }
+
+    // Glass block
+    dist = cubeSDF(p - vec3(0, 2.3, -3), vec3(1, 1, 0.1));
+    if (dist < hit.d) 
+    {
+        hit.d = dist;
+        hit.matIdx = 6;
+    }
+
+    // Specular spheres
+    dist = sphereSDF(p - vec3(0, 1.5, 2), 1);
+    if (dist < hit.d) 
+    {
+        hit.d = dist;
+        hit.matIdx = 5;
+    }
+
+    // 2 Glass spheres
+    dist = sphereSDF(p - vec3(3.5, 1.5, -2), 0.7);
+    if (dist < hit.d) 
+    {
+        hit.d = dist;
+        hit.matIdx = 5;
+    }
+    dist = sphereSDF(p - vec3(-3.5, 1.5, -2), 0.7);
+    if (dist < hit.d) 
+    {
+        hit.d = dist;
+        hit.matIdx = 5;
     }
 
     return hit;    
@@ -159,7 +211,7 @@ vec3 calculateColor(vec3 rayOrigin, vec3 rayDirection)
             cosTheta *= -1;
         }
         cosTheta = max(cosTheta, 0);
-        if (hit.matIdx == 1) { // plane
+        if (hit.matIdx == 3) { // plane
             bool even = (int(floor(hit.p.x)) + int(floor(hit.p.z))) % 2 == 0;
             if (even) {
                 m.color *= 0.2;
@@ -222,10 +274,12 @@ void main()
 
     // Calculate color and average with previous frames
     vec3 color = calculateColor(rayOrigin, rayDirection);
+
     if (calculate) {
         vec3 prevColor = image[id.x * int(imageResolution.y) + id.y].xyz;
         color += currentFrame * prevColor;
         color /= currentFrame + 1;
+        color = clamp(color, 0, 1);
     }
 
     image[id.x * int(imageResolution.y) + id.y] = vec4(color, 1);

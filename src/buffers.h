@@ -9,10 +9,11 @@ public:
     
     SSBO(std::vector<T> data, unsigned int binding)
     {
+        size = data.size();
         glGenBuffers(1, &bufferID);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, bufferID);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, data.size() * sizeof(T), data.data(), GL_DYNAMIC_DRAW);
-        std::cout << "Binded buffer of size " << data.size() * sizeof(T) << " to binding point " << binding << std::endl;
+        glBufferData(GL_SHADER_STORAGE_BUFFER, size * sizeof(T), data.data(), GL_DYNAMIC_DRAW);
+        std::cout << "Binded buffer of size " << size * sizeof(T) << " to binding point " << binding << std::endl;
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, binding, bufferID);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
@@ -25,22 +26,22 @@ public:
     void uploadToGPU(std::vector<T> data)
     {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, bufferID);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, data.size() * sizeof(T), data.data(), GL_DYNAMIC_DRAW);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, size * sizeof(T), data.data(), GL_DYNAMIC_DRAW);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
 
-    std::vector<T> downloadFromGPU()
+    void downloadFromGPU(std::vector<T> &data)
     {   
-        std::vector<T> data;
+        data = std::vector<T>(size);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, bufferID);
-        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, data.size() * sizeof(T), data.data());
+        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, size * sizeof(T), data.data());
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-        return data;
     }
 
 
 private:
     GLuint bufferID;
+    unsigned int size;
 };
 
 #endif // BUFFERS_H

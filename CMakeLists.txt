@@ -20,6 +20,7 @@ include_directories(
         external/imgui
         external/imgui/backends
         external/glm/glm
+        external/stb
 )
 
 file(GLOB SOURCES src/*)

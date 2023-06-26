@@ -5,7 +5,9 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <chrono>
+#include <ctime>
 #include <memory>
+#include <iostream>
 
 #include "shader.h"
 #include "mesh.h"
@@ -14,9 +16,10 @@
 #include "gui.h"
 #include "buffers.h"
 
-#include <iostream>
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 
-const auto imageResolution = glm::vec2(1846, 1016);
+const auto imageResolution = glm::vec2(1920, 1080);
 
 static void init()
 {
@@ -138,6 +141,49 @@ int main()
         glfwSwapBuffers(Window::getInstance().getGLFWWindow());
         iteration++;
         update = false;
+
+        if (gui->save)
+        {
+            // Save image to file in working directory
+            std::cout << "Saving image..." << std::endl;
+            std::vector<glm::vec4> imageColMajor;
+            imageBuffer->downloadFromGPU(imageColMajor);
+            std::vector<glm::vec3> imageRowMajor(imageColMajor.size());
+            // Convert from column major to row major
+            for (int y = 0; y < imageResolution.y; y++)
+            {
+                for (int x = 0; x < imageResolution.x; x++)
+                {
+                    int rowMajorIndex = y * imageResolution.x + x;
+                    int columnMajorIndex = x * imageResolution.y + y;
+                    imageRowMajor[rowMajorIndex] = imageColMajor[columnMajorIndex];
+                }
+            }
+
+            auto data = std::vector<char>(3 * imageRowMajor.size());
+            for (size_t i = 0; i < imageRowMajor.size(); i++)
+            {
+                data[3 * i] = (char)(255 * imageRowMajor[i].x);
+                data[3 * i + 1] = (char)(255 * imageRowMajor[i].y);
+                data[3 * i + 2] = (char)(255 * imageRowMajor[i].z);
+            }
+
+            auto now = std::chrono::system_clock::now();
+            char timestamp[100];
+            std::time_t currentTime = std::chrono::system_clock::to_time_t(now);
+            std::strftime(timestamp, 100, "%Y-%m-%d %H:%M:%S", std::localtime(&currentTime));
+            strcat(timestamp, ".png");
+            int err = stbi_write_png(timestamp, imageResolution.x, imageResolution.y, 3, data.data(), imageResolution.x * 3 * sizeof(char));
+            if (err)
+            {
+                std::cout << "Saved image to " << timestamp << std::endl;
+            }
+            else
+            {
+                std::cerr << "Failed to save image" << std::endl;
+            }
+            gui->save = false;
+        }
     }
 
     return EXIT_SUCCESS;

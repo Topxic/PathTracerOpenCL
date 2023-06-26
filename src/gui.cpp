@@ -55,6 +55,7 @@ void PathTracerGUI::build(float dt)
     reset = ImGui::Button("Reset");
     bool old = calculate;
     ImGui::Checkbox("Calculate", &calculate);
+    save = ImGui::Button("Save picture");
     // Reset buffer if calculate is started
     if (calculate && !old)
     {

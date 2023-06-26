@@ -47,6 +47,7 @@ class PathTracerGUI : public BaseGUI
 public:
     bool reset = false;
     bool calculate = false;
+    bool save = false;
 
     void build(float dt);
 

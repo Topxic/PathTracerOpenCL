@@ -224,7 +224,7 @@ void OrbitControls::setRadiusLimits(float minRadius, float maxRadius)
 void OrbitControls::updateCamera()
 {
     // Clamp up and down vector to prevent camera orientation flipping
-    phi = glm::clamp(phi, 0.01f, M_PIf - 0.01f);
+    phi = glm::clamp(phi, 0.1f, M_PIf - 0.1f);
     float x = radius * glm::sin(phi) * glm::cos(theta);
     float y = radius * glm::cos(phi);
     float z = radius * glm::sin(phi) * glm::sin(theta);
