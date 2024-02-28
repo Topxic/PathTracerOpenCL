@@ -1,5 +1,5 @@
 # SimplePathTracer
-PathTracerOpenCL is a C++ project that implements a simple openCL pathtracing algorithm using OpenCL compute shader.
+PathTracerOpenCL is a C++ project that implements a simple pathtracing algorithm using compute shaders.
 The scene defined by a signed distance field and rendered using raymarching. It supports scattered reflection, refraction
 and light emission.
 
@@ -15,7 +15,7 @@ and light emission.
 ![](scene2Render.png)
 
 ## Prerequisites
-Before running PathTracerOpenCL, make sure you have the following dependencies installed:
+Before running SimplePathTracer, make sure you have the following dependencies installed:
 
 C++ compiler with C++14 support
 CMake (version >= 3.22.1)
